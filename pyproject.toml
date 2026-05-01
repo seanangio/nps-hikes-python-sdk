@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nps-hikes-sdk"
+version = "0.1.0"
+description = "Python client for the NPS Hikes trail API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "CC-BY-NC-SA-4.0"}
+authors = [{name = "Sean Angiolillo"}]
+dependencies = [
+    "requests>=2.31",
+    "pydantic>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/seanangio/nps-hikes-python-sdk"
+Documentation = "https://seanangio.github.io/nps-hikes/"
+API = "https://seanangio-nps-hikes.onrender.com/docs"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
