@@ -33,14 +33,25 @@ When the server API changes, regenerate models:
 datamodel-codegen \
     --url https://seanangio-nps-hikes.onrender.com/openapi.json \
     --output src/nps_hikes/models.py \
-    --output-model-type pydantic_v2.BaseModel
+    --output-model-type pydantic_v2.BaseModel \
+    --use-annotated
 ```
 Or from a local spec file:
 ```bash
 datamodel-codegen \
     --input specs/openapi-2026-05-01.json \
     --output src/nps_hikes/models.py \
-    --output-model-type pydantic_v2.BaseModel
+    --output-model-type pydantic_v2.BaseModel \
+    --use-annotated
 ```
-Then manually remove NlqRequest, NlqResponse, ValidationError, and
-HTTPValidationError classes (not needed in the SDK).
+Then run the post-generation cleanup script:
+```bash
+python scripts/postgen_cleanup.py src/nps_hikes/models.py
+```
+This removes unwanted classes (NlqRequest, NlqResponse, ValidationError,
+HTTPValidationError), inlines RootModel wrappers, and cleans up imports.
+
+## Automated spec sync
+A weekly GitHub Actions workflow (`.github/workflows/sync-spec.yml`) checks
+for OpenAPI spec changes every Monday. If the spec has changed, it saves a
+new snapshot, regenerates models, runs the cleanup script, and opens a PR.

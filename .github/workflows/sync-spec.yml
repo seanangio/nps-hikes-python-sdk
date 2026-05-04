@@ -1,0 +1,93 @@
+name: Sync OpenAPI Spec
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9 AM UTC
+  workflow_dispatch:       # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Fetch live OpenAPI spec
+        run: |
+          curl -sf https://seanangio-nps-hikes.onrender.com/openapi.json \
+            -o /tmp/openapi-live.json
+
+      - name: Check for spec changes
+        id: diff
+        run: |
+          LATEST_SPEC=$(ls -t specs/openapi-*.json | head -1)
+          if diff -q "$LATEST_SPEC" /tmp/openapi-live.json > /dev/null 2>&1; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No spec changes detected (compared to $LATEST_SPEC)"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Spec has changed (compared to $LATEST_SPEC)"
+          fi
+
+      - name: Save new spec snapshot
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          cp /tmp/openapi-live.json "specs/openapi-${DATE}.json"
+          echo "SPEC_DATE=${DATE}" >> "$GITHUB_ENV"
+
+      - name: Regenerate models
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          datamodel-codegen \
+            --input "specs/openapi-${SPEC_DATE}.json" \
+            --output src/nps_hikes/models.py \
+            --output-model-type pydantic_v2.BaseModel \
+            --use-annotated
+
+      - name: Run post-generation cleanup
+        if: steps.diff.outputs.changed == 'true'
+        run: python scripts/postgen_cleanup.py src/nps_hikes/models.py
+
+      - name: Run tests
+        if: steps.diff.outputs.changed == 'true'
+        id: tests
+        run: |
+          if pytest tests/ -v; then
+            echo "result=passing" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failing" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/sync-openapi-${{ env.SPEC_DATE }}
+          commit-message: 'chore: sync models with OpenAPI spec ${{ env.SPEC_DATE }}'
+          title: 'chore: sync models with OpenAPI spec ${{ env.SPEC_DATE }}'
+          body: |
+            Automated update: the live OpenAPI spec has changed.
+
+            **What changed:**
+            - New spec snapshot saved to `specs/openapi-${{ env.SPEC_DATE }}.json`
+            - Models in `src/nps_hikes/models.py` regenerated via `datamodel-codegen`
+            - Post-generation cleanup applied via `scripts/postgen_cleanup.py`
+
+            **Tests:** ${{ steps.tests.outputs.result }}
+
+            > Review the model diff carefully. If new endpoints were added,
+            > `client.py` may need manual updates.
+          labels: automated
